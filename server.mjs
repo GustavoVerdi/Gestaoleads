@@ -32,7 +32,7 @@ async function authenticatedProfile(request) {
   if (!userResponse.ok) return null;
   const user = await userResponse.json();
   const profileUrl = new URL(`${url}/rest/v1/profiles`);
-  profileUrl.searchParams.set('select', 'id,full_name,role_id,active');
+  profileUrl.searchParams.set('select', 'id,full_name,role_id,active,must_change_password');
   profileUrl.searchParams.set('id', `eq.${user.id}`);
   const profileResponse = await fetch(profileUrl, { headers: { ...headers, Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
   if (!profileResponse.ok) throw new Error('Não foi possível carregar seu perfil. Confira se a migração inicial do banco foi aplicada.');

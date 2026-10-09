@@ -16,14 +16,14 @@
         <div class="brand-lockup auth-brand"><div class="brand-mark">v<span>/</span></div><div><span class="brand-name">verdi tech</span><span class="brand-caption">soluções digitais</span></div></div>
         <p class="eyebrow">Acesso à equipe</p>
         <h1 id="auth-title">Entre na sua conta</h1>
-        <p class="auth-copy">Use o e-mail e a senha cadastrados pela administração.</p>
+        <p id="auth-copy" class="auth-copy">Informe o e-mail da sua conta. Vamos confirmar que ele pertence a você antes de criar a senha.</p>
         <form id="auth-form" class="auth-form">
-          <label>E-mail<input name="email" type="email" autocomplete="username" required placeholder="voce@empresa.com" /></label>
-          <label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha" /></label>
+          <label>E-mail<input name="email" type="email" autocomplete="email" required placeholder="voce@empresa.com" /></label>
+          <div id="auth-step-fields"></div>
           <p id="auth-error" class="auth-error" role="alert" hidden></p>
-          <button id="auth-submit" class="button primary auth-submit" type="submit">Entrar <span>↗</span></button>
+          <button id="auth-submit" class="button primary auth-submit" type="submit">Continuar <span>↗</span></button>
         </form>
-        <p class="auth-footnote">Acesso protegido pelo Supabase. Não compartilhe sua senha.</p>
+        <p class="auth-footnote">O código de confirmação só chega ao e-mail cadastrado. Nunca informe esse código a outra pessoa.</p>
       </div>
     </section>
     <div class="app-shell">
