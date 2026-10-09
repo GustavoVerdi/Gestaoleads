@@ -452,15 +452,17 @@ async function searchPlaces() {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(state.prospectFilters),
-      signal: AbortSignal.timeout(20000),
+      // The scraper's Render instance may need up to 60 seconds to wake.
+      signal: AbortSignal.timeout(75000),
     });
     let payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'A busca ao vivo está indisponível. Tente novamente.');
     if (payload.status === 'processing' && payload.jobId) {
       const deadline = Date.now() + 280000;
+      const query = new URLSearchParams(state.prospectFilters);
       while (Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 2500));
-        response = await fetch(`/api/places-search/${encodeURIComponent(payload.jobId)}`, { headers: authHeaders(), signal: AbortSignal.timeout(20000) });
+        response = await fetch(`/api/places-search/${encodeURIComponent(payload.jobId)}?${query}`, { headers: authHeaders(), signal: AbortSignal.timeout(20000) });
         payload = await response.json();
         if (!response.ok) throw new Error(payload.error || 'Não foi possível acompanhar a busca.');
         if (payload.status === 'failed') throw new Error(payload.error || 'A fonte de busca não conseguiu concluir a consulta.');

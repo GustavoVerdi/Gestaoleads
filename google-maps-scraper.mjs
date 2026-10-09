@@ -80,13 +80,9 @@ function parseCsv(source) {
   return rows.map(values => Object.fromEntries(headers.map((key, index) => [key, values[index] || ''])));
 }
 
-export async function searchGoogleMapsScraper(filters, {
+export async function startGoogleMapsScraperJob(filters, {
   baseUrl,
-  apiKey,
   fetchImpl = fetch,
-  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
-  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
-  maxWaitMs = DEFAULT_MAX_WAIT_MS,
 } = {}) {
   if (!baseUrl) throw new Error('Google Maps Scraper não configurado. Inicie o serviço local e defina GOOGLE_MAPS_SCRAPER_URL.');
   const keyword = buildMapsKeyword(filters);
@@ -114,22 +110,23 @@ export async function searchGoogleMapsScraper(filters, {
   }));
   const jobId = submitted.job_id || submitted.id || submitted.ID;
   if (!jobId) throw new Error('O scraper aceitou a busca, mas não retornou o identificador do trabalho.');
+  return { jobId: String(jobId), keyword };
+}
 
-  const deadline = Date.now() + maxWaitMs;
-  let job;
-  while (Date.now() < deadline) {
-    await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
-    job = await responseJson(await fetchImpl(`${root}/api/v1/jobs/${encodeURIComponent(jobId)}`, {
-      headers, signal: AbortSignal.timeout(15000),
-    }));
-    const status = String(job.status || job.Status || '').toLowerCase();
-    if (['completed', 'complete', 'done', 'ok', 'success'].includes(status)) break;
-    if (['failed', 'error', 'cancelled', 'canceled', 'discarded'].includes(status)) {
-      throw new Error(job.error || `A busca no Google Maps terminou com status “${status}”.`);
-    }
+export async function getGoogleMapsScraperJob(jobId, filters = {}, { baseUrl, fetchImpl = fetch } = {}) {
+  if (!baseUrl) throw new Error('Google Maps Scraper não configurado.');
+  const keyword = buildMapsKeyword(filters);
+  const root = baseUrl.replace(/\/+$/, '');
+  const headers = { 'Content-Type': 'application/json' };
+  const job = await responseJson(await fetchImpl(`${root}/api/v1/jobs/${encodeURIComponent(jobId)}`, {
+    headers, signal: AbortSignal.timeout(15000),
+  }));
+  const status = String(job.status || job.Status || '').toLowerCase();
+  if (['failed', 'error', 'cancelled', 'canceled', 'discarded'].includes(status)) {
+    return { status: 'failed', provider: 'google-maps-scraper', error: job.error || `A busca no Google Maps terminou com status “${status}”.` };
   }
-  if (!job || !['completed', 'complete', 'done', 'ok', 'success'].includes(String(job.status || job.Status || '').toLowerCase())) {
-    throw new Error('A busca no Google Maps ainda está processando. Tente novamente em instantes.');
+  if (!['completed', 'complete', 'done', 'ok', 'success'].includes(status)) {
+    return { status: 'processing', provider: 'google-maps-scraper' };
   }
   const csvResponse = await fetchImpl(`${root}/api/v1/jobs/${encodeURIComponent(jobId)}/download`, {
     headers: { Accept: 'text/csv' }, signal: AbortSignal.timeout(15000),
@@ -145,9 +142,28 @@ export async function searchGoogleMapsScraper(filters, {
   }
   const results = [...unique.values()];
   return {
+    status: 'completed',
     configured: true,
     provider: 'google-maps-scraper',
     results,
     notice: `Google Maps consultado agora; ${results.length} empresa(s) encontrada(s) para “${keyword}”.`,
   };
+}
+
+export async function searchGoogleMapsScraper(filters, {
+  baseUrl,
+  fetchImpl = fetch,
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
+  maxWaitMs = DEFAULT_MAX_WAIT_MS,
+} = {}) {
+  const { jobId } = await startGoogleMapsScraperJob(filters, { baseUrl, fetchImpl });
+  const deadline = Date.now() + maxWaitMs;
+  while (Date.now() < deadline) {
+    await sleep(Math.min(pollIntervalMs, Math.max(0, deadline - Date.now())));
+    const job = await getGoogleMapsScraperJob(jobId, filters, { baseUrl, fetchImpl });
+    if (job.status === 'completed') return job;
+    if (job.status === 'failed') throw new Error(job.error);
+  }
+  throw new Error('A busca no Google Maps ainda está processando. Tente novamente em instantes.');
 }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMapsKeyword, mapGoogleMapsPlace, searchGoogleMapsScraper } from '../google-maps-scraper.mjs';
+import { buildMapsKeyword, getGoogleMapsScraperJob, mapGoogleMapsPlace, searchGoogleMapsScraper } from '../google-maps-scraper.mjs';
 
 test('monta consulta Maps com nicho, cidade, estado e região', () => {
   assert.equal(buildMapsKeyword({ segment: 'Loja de roupas', city: 'Pouso Redondo', state: 'sc', region: 'Alto Vale' }), 'Loja de roupas em Pouso Redondo, SC - Alto Vale');
@@ -44,6 +44,25 @@ test('submete e acompanha um job do scraper e converte o CSV em leads', async ()
   assert.equal(result.results[0].name, 'Mecânica Central');
   assert.equal(result.results[0].reviews, '12');
   assert.equal(result.results[0].site, 'https://oficina.example');
+});
+
+test('consulta o job remoto diretamente em cada chamada, sem depender de memória do servidor web', async () => {
+  let status = 'running';
+  const calls = [];
+  const fetchImpl = async url => {
+    calls.push(url);
+    if (url.endsWith('/download')) return { ok: true, status: 200, text: async () => 'title,category,complete_address,phone,website,review_rating,review_count,link\n"Mercado Central","Supermarket","Centro, Ituporanga","4733330000","",4.6,20,"https://maps.google.com/place/central"\n' };
+    return { ok: true, status: 200, text: async () => JSON.stringify({ Status: status === 'running' ? 'pending' : 'ok' }) };
+  };
+
+  const pending = await getGoogleMapsScraperJob('remote-456', { city: 'Ituporanga', state: 'SC' }, { baseUrl: 'https://scraper.example', fetchImpl });
+  assert.equal(pending.status, 'processing');
+  status = 'done';
+  const completed = await getGoogleMapsScraperJob('remote-456', { city: 'Ituporanga', state: 'SC' }, { baseUrl: 'https://scraper.example', fetchImpl });
+  assert.equal(completed.status, 'completed');
+  assert.equal(completed.results[0].name, 'Mercado Central');
+  assert.equal(completed.results[0].city, 'Ituporanga - SC');
+  assert.equal(calls.filter(url => url.endsWith('/api/v1/jobs/remote-456')).length, 2);
 });
 
 test('explica configuração ausente em vez de inventar resultados', async () => {

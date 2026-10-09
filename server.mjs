@@ -1,10 +1,9 @@
 import { createServer } from 'node:http';
-import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUSINESS_TAG_KEYS as testedBusinessTagKeys, buildNicheSelectors, matchesNiche as testedMatchesNiche } from './prospecting-search.mjs';
-import { searchGoogleMapsScraper } from './google-maps-scraper.mjs';
+import { getGoogleMapsScraperJob, startGoogleMapsScraperJob } from './google-maps-scraper.mjs';
 
 async function loadLocalEnvironment() {
   try {
@@ -94,38 +93,34 @@ async function searchPlaces(request, response) {
     if (!auth?.profile?.active) return sendJson(response, 401, { error: 'Entre no sistema para pesquisar leads.' });
   } catch (error) { return sendJson(response, 503, { error: error.message || 'Não foi possível validar seu acesso.' }); }
   const query = await readRequest(request);
-  if ([...placesSearches.values()].filter(job => job.status === 'processing').length >= 3) return sendJson(response, 429, { error: 'Já existem três buscas em andamento. Aguarde uma terminar e tente novamente.' });
-  const jobId = randomUUID();
-  const provider = process.env.GOOGLE_MAPS_SCRAPER_URL ? 'google-maps-scraper' : 'openstreetmap';
-  const job = { status: 'processing', provider, createdAt: Date.now() };
-  placesSearches.set(jobId, job);
-  void (async () => {
+  const scraperUrl = process.env.GOOGLE_MAPS_SCRAPER_URL;
+  if (scraperUrl) {
     try {
-      job.result = provider === 'google-maps-scraper'
-        ? await searchGoogleMapsScraper(query, { baseUrl: process.env.GOOGLE_MAPS_SCRAPER_URL })
-        : await searchOpenStreetMap(query);
-      job.status = 'completed';
+      const { jobId } = await startGoogleMapsScraperJob(query, { baseUrl: scraperUrl });
+      return sendJson(response, 202, { jobId, status: 'processing', provider: 'google-maps-scraper', notice: 'Busca iniciada no Google Maps. Você pode acompanhar o resultado nesta tela.' });
     } catch (error) {
-      job.error = error.message || 'Não foi possível consultar a fonte agora. Tente novamente em instantes; nenhum resultado antigo foi usado.';
-      job.status = 'failed';
+      return sendJson(response, 502, { error: error.message || 'Não foi possível iniciar o Google Maps Scraper.' });
     }
-  })();
-  const expiry = setTimeout(() => placesSearches.delete(jobId), 10 * 60 * 1000);
-  expiry.unref?.();
-  return sendJson(response, 202, { jobId, status: 'processing', provider, notice: 'Busca iniciada. Você pode acompanhar o resultado nesta tela.' });
+  }
+  try { return sendJson(response, 200, await searchOpenStreetMap(query)); }
+  catch (error) { return sendJson(response, 502, { error: error.message || 'Não foi possível consultar uma fonte pública agora.' }); }
 }
 
-const placesSearches = new Map();
 async function getPlacesSearch(request, response, jobId) {
   try {
     const auth = await authenticatedProfile(request);
     if (!auth?.profile?.active) return sendJson(response, 401, { error: 'Entre no sistema para ver os resultados.' });
   } catch (error) { return sendJson(response, 503, { error: error.message || 'Não foi possível validar seu acesso.' }); }
-  const job = placesSearches.get(jobId);
-  if (!job) return sendJson(response, 404, { error: 'Esta busca temporária expirou. Inicie uma nova consulta.' });
-  if (job.status === 'processing') return sendJson(response, 200, { status: job.status, provider: job.provider });
-  if (job.status === 'failed') return sendJson(response, 200, { status: job.status, provider: job.provider, error: job.error, results: [] });
-  return sendJson(response, 200, { ...job.result, status: 'completed', provider: job.result?.provider || job.provider });
+  if (!process.env.GOOGLE_MAPS_SCRAPER_URL) return sendJson(response, 410, { error: 'A busca no serviço público expirou. Inicie uma nova consulta.' });
+  const filters = Object.fromEntries(new URL(request.url, `http://${request.headers.host || 'localhost'}`).searchParams.entries());
+  try {
+    const job = await getGoogleMapsScraperJob(jobId, filters, { baseUrl: process.env.GOOGLE_MAPS_SCRAPER_URL });
+    if (job.status === 'failed') return sendJson(response, 200, { ...job, results: [] });
+    return sendJson(response, 200, job);
+  } catch (error) {
+    if (/status 404/i.test(error.message)) return sendJson(response, 410, { error: 'O Google Maps Scraper não encontrou essa busca temporária. Inicie uma nova consulta.' });
+    return sendJson(response, 502, { error: error.message || 'Não foi possível consultar o andamento no scraper.' });
+  }
 }
 
 const server = createServer(async (request, response) => { try { const requestUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`); if (requestUrl.pathname === '/api/auth/config' && request.method === 'GET') { const { url, publishableKey } = supabaseConfig(); return sendJson(response, 200, { configured: Boolean(url && publishableKey), url, publishableKey }); } if (requestUrl.pathname === '/api/auth/session' && request.method === 'GET') { try { const auth = await authenticatedProfile(request); if (!auth?.profile?.active) return sendJson(response, 401, { error: 'Acesso não autorizado.' }); return sendJson(response, 200, auth); } catch (error) { return sendJson(response, 503, { error: error.message || 'Falha ao validar a sessão.' }); } } if (requestUrl.pathname === '/api/places-search' && request.method === 'POST') return await searchPlaces(request, response); const searchMatch = requestUrl.pathname.match(/^\/api\/places-search\/([\w-]+)$/); if (searchMatch && request.method === 'GET') return await getPlacesSearch(request, response, searchMatch[1]); if (requestUrl.pathname === '/api/health') return sendJson(response, 200, { ok: true, placesProvider: process.env.GOOGLE_MAPS_SCRAPER_URL ? 'Google Maps Scraper' : 'OpenStreetMap ao vivo', mapsScraperConfigured: Boolean(process.env.GOOGLE_MAPS_SCRAPER_URL), authConfigured: Boolean(supabaseConfig().url && supabaseConfig().publishableKey) }); const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname; const safePath = normalize(join(root, pathname)); if (!safePath.startsWith(root)) return sendJson(response, 403, { error: 'Forbidden' }); const contents = await readFile(safePath); response.writeHead(200, { 'Content-Type': mimeTypes[extname(safePath)] || 'application/octet-stream' }); response.end(contents); } catch (error) { if (error.code === 'ENOENT') return sendJson(response, 404, { error: 'Not found' }); sendJson(response, 500, { error: 'Internal server error' }); } });
