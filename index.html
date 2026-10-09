@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#171a16" />
+    <title>Verdi Tech Soluções — Projetos</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=DM+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" aria-label="Navegação principal">
+        <div class="brand-lockup">
+          <div class="brand-mark">d<span>/</span></div>
+          <div>
+            <span class="brand-name">verdi tech</span>
+            <span class="brand-caption">soluções digitais</span>
+          </div>
+        </div>
+
+        <div class="workspace-switcher">
+          <div class="workspace-avatar">DV</div>
+          <div class="workspace-copy"><span>Workspace</span><strong>Verdi Tech Soluções</strong></div>
+          <button class="icon-button small" aria-label="Trocar workspace">⌄</button>
+        </div>
+
+        <p class="nav-label">Administração</p>
+        <nav class="main-nav">
+          <button class="nav-item active" data-view="dashboard"><span class="nav-icon">⌂</span><span>Visão geral</span></button>
+          <button class="nav-item" data-view="projects"><span class="nav-icon">▦</span><span>Meus projetos</span></button>
+          <button class="nav-item" data-view="leads"><span class="nav-icon">♢</span><span>Leads</span></button>
+          <button class="nav-item" data-view="team"><span class="nav-icon">♙</span><span>Equipe e cargos</span></button>
+        </nav>
+
+        <p class="nav-label secondary-label">Demonstração</p>
+        <div class="sidebar-note">Perfis simulados neste navegador. Ainda não substituem login real.</div>
+
+        <div class="sidebar-bottom">
+          <div class="help-card"><span class="help-spark">✦</span><div><strong>Seu espaço</strong><span>Projetos, equipe e leads.</span></div></div>
+          <div class="user-card"><div class="user-avatar" id="sidebar-user-avatar">GV</div><div class="user-copy"><strong id="sidebar-user-name">Gustavo Verdi</strong><span id="sidebar-user-role">Dono · demonstração</span></div></div>
+        </div>
+      </aside>
+
+      <main class="main-content">
+        <header class="topbar">
+          <div class="breadcrumbs"><span>Verdi Tech Soluções</span><span class="crumb-separator">/</span><strong id="breadcrumb-current">Dashboard</strong></div>
+          <div class="topbar-actions">
+            <label class="role-demo-control"><span>Prévia de perfil</span><select id="role-preview" aria-label="Simular funcionário"></select></label>
+            <label class="global-search"><span>⌕</span><input id="global-search" type="search" placeholder="Buscar projetos..." /><kbd>⌘ K</kbd></label>
+            <button class="icon-button top-icon" aria-label="Ajuda">?</button>
+            <button class="icon-button top-icon notification-button" aria-label="Notificações"><span>♧</span><i></i></button>
+            <div class="top-avatar" id="top-user-avatar">GV</div>
+          </div>
+        </header>
+
+        <div id="view-root" class="view-root"></div>
+      </main>
+    </div>
+
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+
+    <div id="modal-root" class="modal-root" aria-hidden="true">
+      <div class="modal-backdrop" data-close-modal></div>
+      <section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+        <div class="modal-header"><div><p class="eyebrow">Novo registro</p><h2 id="modal-title">Adicionar lead</h2></div><button class="icon-button" data-close-modal aria-label="Fechar">×</button></div>
+        <form id="lead-form" class="modal-form">
+          <label>Nome da loja / empresa<input name="company" required placeholder="Ex.: Barbearia Central" /></label>
+          <label>WhatsApp<input name="whatsapp" type="tel" inputmode="tel" required placeholder="(47) 99999-9999" /></label>
+          <div class="form-row"><label>Nicho<input name="segment" required placeholder="Ex.: Barbearia" /></label><label>Cidade<input name="city" placeholder="Ex.: Rio do Sul - SC" /></label></div>
+          <div class="modal-actions"><button type="button" class="button ghost" data-close-modal>Cancelar</button><button type="submit" class="button primary">Adicionar lead <span>↗</span></button></div>
+        </form>
+      </section>
+    </div>
+
+    <div id="prospect-drawer-root" class="drawer-root" aria-hidden="true"></div>
+
+    <script src="app.js"></script>
+  </body>
+</html>
