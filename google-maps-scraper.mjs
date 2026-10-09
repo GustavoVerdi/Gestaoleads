@@ -109,7 +109,8 @@ export async function searchGoogleMapsScraper(filters, {
       extra_reviews: false,
       fast_mode: false,
     }),
-    signal: AbortSignal.timeout(15000),
+    // The scraper may be waking from Render's free-tier sleep; allow startup time.
+    signal: AbortSignal.timeout(60000),
   }));
   const jobId = submitted.job_id || submitted.id || submitted.ID;
   if (!jobId) throw new Error('O scraper aceitou a busca, mas não retornou o identificador do trabalho.');

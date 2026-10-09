@@ -447,14 +447,29 @@ async function searchPlaces() {
   state.prospectProvider = '';
   render();
   try {
-    const response = await fetch('/api/places-search', {
+    const authHeaders = () => ({ 'Content-Type': 'application/json', ...(window.verdiAuth?.session?.access_token ? { Authorization: `Bearer ${window.verdiAuth.session.access_token}` } : {}) });
+    let response = await fetch('/api/places-search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', ...(window.verdiAuth?.session?.access_token ? { Authorization: `Bearer ${window.verdiAuth.session.access_token}` } : {}) },
+      headers: authHeaders(),
       body: JSON.stringify(state.prospectFilters),
-      signal: AbortSignal.timeout(280000),
+      signal: AbortSignal.timeout(20000),
     });
-    const payload = await response.json();
+    let payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'A busca ao vivo está indisponível. Tente novamente.');
+    if (payload.status === 'processing' && payload.jobId) {
+      const deadline = Date.now() + 280000;
+      while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 2500));
+        response = await fetch(`/api/places-search/${encodeURIComponent(payload.jobId)}`, { headers: authHeaders(), signal: AbortSignal.timeout(20000) });
+        payload = await response.json();
+        if (!response.ok) throw new Error(payload.error || 'Não foi possível acompanhar a busca.');
+        if (payload.status === 'failed') throw new Error(payload.error || 'A fonte de busca não conseguiu concluir a consulta.');
+        if (payload.status === 'completed') break;
+        state.prospectMessage = 'O scraper está pesquisando no Google Maps. Isso pode levar alguns minutos…';
+        render();
+      }
+      if (payload.status !== 'completed') throw new Error('A busca ainda está sendo processada. Tente novamente em instantes.');
+    }
     if (!Array.isArray(payload.results)) throw new Error(payload.error || 'A fonte não retornou uma lista de resultados.');
     state.prospectResults = payload.results;
     state.prospectRemote = true;
