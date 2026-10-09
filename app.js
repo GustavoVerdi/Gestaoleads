@@ -449,7 +449,7 @@ async function searchPlaces() {
   try {
     const response = await fetch('/api/places-search', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(window.verdiAuth?.session?.access_token ? { Authorization: `Bearer ${window.verdiAuth.session.access_token}` } : {}) },
       body: JSON.stringify(state.prospectFilters),
       signal: AbortSignal.timeout(280000),
     });
@@ -486,4 +486,22 @@ $('#lead-form').addEventListener('submit', event => { event.preventDefault(); if
 $('#global-search').addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.value.trim()) { state.projectSearch = event.target.value.trim(); navigate('projects'); } });
 document.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#global-search').focus(); } if (event.key.toLowerCase() === 'n' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName) && hasPermission('project-edit')) { event.preventDefault(); state.projectFormOpen = true; state.editingProjectId = null; navigate('projects'); } if (event.key === 'Escape') { closeModal(); closeDrawer(); } });
 document.addEventListener('click', event => { const detailsButton = event.target.closest('[data-action="view-prospect"]'); if (detailsButton) { event.preventDefault(); openProspectDrawer(detailsButton.dataset.company); } });
-render();
+window.verdiAuthReady.then(authorized => {
+  if (!authorized) return;
+  const { user, profile } = window.verdiAuth;
+  const role = profile.role || { id: profile.role_id, name: profile.role_id === 'owner' ? 'Dono' : 'Vendedor', permissions: profile.permissions };
+  state.roles = [{ ...role, permissions: profile.permissions }];
+  state.employees = [{ id: user.id, name: profile.full_name || user.email || 'Usuário', roleId: role.id }];
+  state.activeEmployeeId = user.id;
+  const demoControl = $('.role-demo-control');
+  if (demoControl) demoControl.hidden = true;
+  const note = $('.sidebar-note');
+  if (note) { note.textContent = 'Acesso autenticado pela equipe Verdi Tech.'; note.parentElement.querySelector('.secondary-label')?.classList.add('auth-note-hidden'); }
+  render();
+  const logout = document.createElement('button');
+  logout.className = 'auth-logout';
+  logout.type = 'button';
+  logout.textContent = 'Sair';
+  logout.addEventListener('click', () => { sessionStorage.removeItem('verdi-supabase-session-v1'); location.reload(); });
+  $('.topbar-actions')?.prepend(logout);
+});

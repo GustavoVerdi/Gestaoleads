@@ -11,6 +11,21 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <section id="auth-gate" class="auth-gate" aria-labelledby="auth-title" hidden>
+      <div class="auth-card">
+        <div class="brand-lockup auth-brand"><div class="brand-mark">v<span>/</span></div><div><span class="brand-name">verdi tech</span><span class="brand-caption">soluções digitais</span></div></div>
+        <p class="eyebrow">Acesso à equipe</p>
+        <h1 id="auth-title">Entre na sua conta</h1>
+        <p class="auth-copy">Use o e-mail e a senha cadastrados pela administração.</p>
+        <form id="auth-form" class="auth-form">
+          <label>E-mail<input name="email" type="email" autocomplete="username" required placeholder="voce@empresa.com" /></label>
+          <label>Senha<input name="password" type="password" autocomplete="current-password" required placeholder="Sua senha" /></label>
+          <p id="auth-error" class="auth-error" role="alert" hidden></p>
+          <button id="auth-submit" class="button primary auth-submit" type="submit">Entrar <span>↗</span></button>
+        </form>
+        <p class="auth-footnote">Acesso protegido pelo Supabase. Não compartilhe sua senha.</p>
+      </div>
+    </section>
     <div class="app-shell">
       <aside class="sidebar" aria-label="Navegação principal">
         <div class="brand-lockup">
@@ -77,6 +92,7 @@
 
     <div id="prospect-drawer-root" class="drawer-root" aria-hidden="true"></div>
 
+    <script src="auth.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

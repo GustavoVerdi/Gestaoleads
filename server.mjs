@@ -22,6 +22,30 @@ const port = Number(process.env.PORT || 4173);
 const mimeTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8' };
 
 function sendJson(response, status, payload) { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(payload)); }
+function supabaseConfig() { return { url: String(process.env.SUPABASE_URL || '').replace(/\/$/, ''), publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '' }; }
+async function authenticatedProfile(request) {
+  const { url, publishableKey } = supabaseConfig();
+  const token = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
+  if (!url || !publishableKey || !token) return null;
+  const headers = { apikey: publishableKey, Authorization: `Bearer ${token}` };
+  const userResponse = await fetch(`${url}/auth/v1/user`, { headers, signal: AbortSignal.timeout(8000) });
+  if (!userResponse.ok) return null;
+  const user = await userResponse.json();
+  const profileUrl = new URL(`${url}/rest/v1/profiles`);
+  profileUrl.searchParams.set('select', 'id,full_name,role_id,active');
+  profileUrl.searchParams.set('id', `eq.${user.id}`);
+  const profileResponse = await fetch(profileUrl, { headers: { ...headers, Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+  if (!profileResponse.ok) throw new Error('Não foi possível carregar seu perfil. Confira se a migração inicial do banco foi aplicada.');
+  const [profile] = await profileResponse.json();
+  if (!profile) return null;
+  const roleUrl = new URL(`${url}/rest/v1/app_roles`);
+  roleUrl.searchParams.set('select', 'id,name,permissions,protected');
+  roleUrl.searchParams.set('id', `eq.${profile.role_id}`);
+  const roleResponse = await fetch(roleUrl, { headers: { ...headers, Accept: 'application/json' }, signal: AbortSignal.timeout(8000) });
+  if (!roleResponse.ok) throw new Error('Não foi possível carregar as permissões do cargo.');
+  const [role] = await roleResponse.json();
+  return { user: { id: user.id, email: user.email }, profile: { ...profile, role: role || null, permissions: role?.permissions || [] } };
+}
 function escapeRegex(value) { return String(value || '').replace(/[\\"\[\]()*+?.^$|{}]/g, '\\$&'); }
 function normalizeText(value) { return String(value || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim(); }
 const businessTagKeys = ['shop', 'amenity', 'office', 'craft', 'healthcare', 'tourism', 'leisure', 'industrial', 'club', 'sport'];
@@ -64,6 +88,10 @@ async function searchOpenStreetMap(query) {
 }
 async function readRequest(request) { let body = ''; for await (const chunk of request) body += chunk; return JSON.parse(body || '{}'); }
 async function searchPlaces(request, response) {
+  try {
+    const auth = await authenticatedProfile(request);
+    if (!auth?.profile?.active) return sendJson(response, 401, { error: 'Entre no sistema para pesquisar leads.' });
+  } catch (error) { return sendJson(response, 503, { error: error.message || 'Não foi possível validar seu acesso.' }); }
   const query = await readRequest(request);
   try {
     if (process.env.GOOGLE_MAPS_SCRAPER_URL) {
@@ -77,5 +105,5 @@ async function searchPlaces(request, response) {
   }
 }
 
-const server = createServer(async (request, response) => { try { const requestUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`); if (requestUrl.pathname === '/api/places-search' && request.method === 'POST') return await searchPlaces(request, response); if (requestUrl.pathname === '/api/health') return sendJson(response, 200, { ok: true, placesProvider: process.env.GOOGLE_MAPS_SCRAPER_URL ? 'Google Maps Scraper' : 'OpenStreetMap ao vivo', mapsScraperConfigured: Boolean(process.env.GOOGLE_MAPS_SCRAPER_URL) }); const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname; const safePath = normalize(join(root, pathname)); if (!safePath.startsWith(root)) return sendJson(response, 403, { error: 'Forbidden' }); const contents = await readFile(safePath); response.writeHead(200, { 'Content-Type': mimeTypes[extname(safePath)] || 'application/octet-stream' }); response.end(contents); } catch (error) { if (error.code === 'ENOENT') return sendJson(response, 404, { error: 'Not found' }); sendJson(response, 500, { error: 'Internal server error' }); } });
+const server = createServer(async (request, response) => { try { const requestUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`); if (requestUrl.pathname === '/api/auth/config' && request.method === 'GET') { const { url, publishableKey } = supabaseConfig(); return sendJson(response, 200, { configured: Boolean(url && publishableKey), url, publishableKey }); } if (requestUrl.pathname === '/api/auth/session' && request.method === 'GET') { try { const auth = await authenticatedProfile(request); if (!auth?.profile?.active) return sendJson(response, 401, { error: 'Acesso não autorizado.' }); return sendJson(response, 200, auth); } catch (error) { return sendJson(response, 503, { error: error.message || 'Falha ao validar a sessão.' }); } } if (requestUrl.pathname === '/api/places-search' && request.method === 'POST') return await searchPlaces(request, response); if (requestUrl.pathname === '/api/health') return sendJson(response, 200, { ok: true, placesProvider: process.env.GOOGLE_MAPS_SCRAPER_URL ? 'Google Maps Scraper' : 'OpenStreetMap ao vivo', mapsScraperConfigured: Boolean(process.env.GOOGLE_MAPS_SCRAPER_URL), authConfigured: Boolean(supabaseConfig().url && supabaseConfig().publishableKey) }); const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname; const safePath = normalize(join(root, pathname)); if (!safePath.startsWith(root)) return sendJson(response, 403, { error: 'Forbidden' }); const contents = await readFile(safePath); response.writeHead(200, { 'Content-Type': mimeTypes[extname(safePath)] || 'application/octet-stream' }); response.end(contents); } catch (error) { if (error.code === 'ENOENT') return sendJson(response, 404, { error: 'Not found' }); sendJson(response, 500, { error: 'Internal server error' }); } });
 server.listen(port, () => console.log(`Despverdi Gestão em http://localhost:${port}`));
