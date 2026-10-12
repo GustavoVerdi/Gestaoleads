@@ -90,3 +90,36 @@ test('consulta o job remoto diretamente em cada chamada, sem depender de memóri
 test('explica configuração ausente em vez de inventar resultados', async () => {
   await assert.rejects(() => searchGoogleMapsScraper({ city: 'Pouso Redondo' }, { baseUrl: '', apiKey: '' }), /não configurado/i);
 });
+
+test('modo leve envia a localização resolvida e recusa coordenadas ausentes', async () => {
+  let body;
+  const fetchImpl = async (url, options = {}) => {
+    if (options.body) body = JSON.parse(options.body);
+    return { ok: true, status: 200, text: async () => options.body ? '{"id":"fast-job"}' : '<h1>Google Maps Scraper</h1>' };
+  };
+  const filters = { segment: 'Mercado', city: 'Pouso Redondo', state: 'SC' };
+  const options = { baseUrl: 'https://scraper.example', fetchImpl, fastMode: true };
+  await assert.rejects(startGoogleMapsScraperJob(filters, options), /localização da cidade/);
+  await assert.rejects(startGoogleMapsScraperJob(filters, { ...options, location: { lat: '', lon: '', radius: 20000 } }), /localização da cidade/);
+  await startGoogleMapsScraperJob(filters, { ...options, location: { lat: '-27.3', lon: '-49.9', radius: 20000 } });
+  assert.equal(body.fast_mode, true);
+  assert.equal(body.lat, '-27.3');
+  assert.equal(body.lon, '-49.9');
+  assert.equal(body.radius, 20000);
+  assert.deepEqual(body.keywords, ['Mercado em Pouso Redondo, SC']);
+});
+
+test('endereço simples não é perdido quando o JSON detalhado vem vazio', () => {
+  const place = mapGoogleMapsPlace({ title: 'Supermercado', address: 'Rua Central, Pouso Redondo - SC', complete_address: '{"street":"","city":""}' });
+  assert.equal(place.address, 'Rua Central, Pouso Redondo - SC');
+  assert.match(place.mapsUrl, /^https:\/\/www.google.com\/maps\/search\/\?api=1&query=/);
+  assert.ok(decodeURIComponent(place.mapsUrl).includes('Supermercado, Rua Central'));
+});
+
+test('resultado do modo leve informa limites em vez de prometer cobertura completa', async () => {
+  const fetchImpl = async url => ({ ok: true, status: 200, text: async () => url.endsWith('/download') ? 'title,address\nMercado,Rua Central\n' : '{"status":"ok"}' });
+  const result = await getGoogleMapsScraperJob('fast-job', {}, { baseUrl: 'https://scraper.example', fastMode: true, fetchImpl });
+  assert.match(result.notice, /até 21 resultados/);
+  assert.match(result.notice, /IBGE/);
+  assert.equal(result.results[0].address, 'Rua Central');
+});

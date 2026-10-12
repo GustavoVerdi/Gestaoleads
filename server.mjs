@@ -4,6 +4,7 @@ import { extname, join, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { BUSINESS_TAG_KEYS as testedBusinessTagKeys, buildNicheSelectors, matchesNiche as testedMatchesNiche } from './prospecting-search.mjs';
 import { getGoogleMapsScraperJob, startGoogleMapsScraperJob } from './google-maps-scraper.mjs';
+import { resolveMunicipality } from './municipality-location.mjs';
 
 async function loadLocalEnvironment() {
   try {
@@ -98,7 +99,11 @@ async function searchPlaces(request, response) {
   const scraperUrl = process.env.GOOGLE_MAPS_SCRAPER_URL?.trim();
   if (scraperUrl) {
     try {
-      const { jobId } = await startGoogleMapsScraperJob(query, { baseUrl: scraperUrl });
+      // Fast mode avoids Chromium and fits small instances. Full mode remains
+      // available explicitly for hosts with enough memory.
+      const fastMode = process.env.GOOGLE_MAPS_SCRAPER_MODE !== 'full';
+      const location = fastMode ? await resolveMunicipality(query) : undefined;
+      const { jobId } = await startGoogleMapsScraperJob(query, { baseUrl: scraperUrl, fastMode, location });
       return sendJson(response, 202, { jobId, status: 'processing', provider: 'google-maps-scraper', notice: 'Busca iniciada no Google Maps. Você pode acompanhar o resultado nesta tela.' });
     } catch (error) {
       return sendJson(response, 502, { error: error.message || 'Não foi possível iniciar o Google Maps Scraper.' });
@@ -116,7 +121,7 @@ async function getPlacesSearch(request, response, jobId) {
   if (!process.env.GOOGLE_MAPS_SCRAPER_URL) return sendJson(response, 410, { error: 'A busca no serviço público expirou. Inicie uma nova consulta.' });
   const filters = Object.fromEntries(new URL(request.url, `http://${request.headers.host || 'localhost'}`).searchParams.entries());
   try {
-    const job = await getGoogleMapsScraperJob(jobId, filters, { baseUrl: process.env.GOOGLE_MAPS_SCRAPER_URL });
+    const job = await getGoogleMapsScraperJob(jobId, filters, { baseUrl: process.env.GOOGLE_MAPS_SCRAPER_URL.trim(), fastMode: process.env.GOOGLE_MAPS_SCRAPER_MODE !== 'full' });
     if (job.status === 'failed') return sendJson(response, 200, { ...job, results: [] });
     return sendJson(response, 200, job);
   } catch (error) {

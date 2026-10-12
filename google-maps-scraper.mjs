@@ -21,10 +21,10 @@ function formatAddress(value) {
 
 export function mapGoogleMapsPlace(place = {}, query = {}) {
   const name = String(place.title || place.name || '').trim();
-  const address = formatAddress(place.complete_address || place.address || '');
+  const address = formatAddress(place.complete_address) || formatAddress(place.address);
   const website = String(place.website || '').trim();
   const phone = String(place.phone || '').trim();
-  const sourceUrl = String(place.link || place.url || '').trim();
+  const sourceUrl = String(place.link || place.url || '').trim() || (name ? `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent([name, address || query.city, query.state].filter(Boolean).join(', '))}` : '');
   return {
     name: name || 'Empresa sem nome',
     type: String(place.category || place.type || 'Empresa'),
@@ -90,10 +90,15 @@ export async function startGoogleMapsScraperJob(filters, {
   fetchImpl = fetch,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
   wakeTimeoutMs = 90000,
+  fastMode = false,
+  location,
 } = {}) {
   if (!baseUrl) throw new Error('Google Maps Scraper não configurado. Inicie o serviço local e defina GOOGLE_MAPS_SCRAPER_URL.');
   const keyword = buildMapsKeyword(filters);
   if (!keyword) throw new Error('Informe um segmento ou uma localização para pesquisar.');
+  if (fastMode && (!location || !String(location.lat ?? '').trim() || !String(location.lon ?? '').trim() || !Number.isFinite(Number(location.lat)) || !Number.isFinite(Number(location.lon)) || Math.abs(Number(location.lat)) > 90 || Math.abs(Number(location.lon)) > 180 || !(location.radius > 0))) {
+    throw new Error('Não foi possível definir a localização da cidade para a busca leve.');
+  }
   const root = baseUrl.replace(/\/+$/, '');
   const headers = { 'Content-Type': 'application/json' };
 
@@ -124,12 +129,12 @@ export async function startGoogleMapsScraperJob(filters, {
       depth: 1,
       max_time: 250,
       zoom: 15,
-      lat: '0',
-      lon: '0',
-      radius: 10000,
+      lat: fastMode ? String(location.lat) : '0',
+      lon: fastMode ? String(location.lon) : '0',
+      radius: fastMode ? location.radius : 10000,
       email: false,
       extra_reviews: false,
-      fast_mode: false,
+      fast_mode: fastMode,
     }),
     signal: AbortSignal.timeout(45000),
   }));
@@ -138,7 +143,7 @@ export async function startGoogleMapsScraperJob(filters, {
   return { jobId: String(jobId), keyword };
 }
 
-export async function getGoogleMapsScraperJob(jobId, filters = {}, { baseUrl, fetchImpl = fetch } = {}) {
+export async function getGoogleMapsScraperJob(jobId, filters = {}, { baseUrl, fetchImpl = fetch, fastMode = false } = {}) {
   if (!baseUrl) throw new Error('Google Maps Scraper não configurado.');
   const keyword = buildMapsKeyword(filters);
   const root = baseUrl.replace(/\/+$/, '');
@@ -171,7 +176,7 @@ export async function getGoogleMapsScraperJob(jobId, filters = {}, { baseUrl, fe
     configured: true,
     provider: 'google-maps-scraper',
     results,
-    notice: `Google Maps consultado agora; ${results.length} empresa(s) encontrada(s) para “${keyword}”.`,
+    notice: `Google Maps consultado agora; ${results.length} empresa(s) encontrada(s) para “${keyword}”.${fastMode ? ' Modo leve: até 21 resultados por consulta, com cobertura e dados limitados. Confira a localização de cada empresa. Área do município: IBGE.' : ''}`,
   };
 }
 
