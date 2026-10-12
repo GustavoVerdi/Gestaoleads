@@ -437,6 +437,7 @@ function exportWorkspaceData() {
 }
 
 async function searchPlaces() {
+  if (state.prospectLoading) return;
   const getValue = id => document.getElementById(id)?.value.trim() || '';
   state.prospectFilters = { segment: getValue('prospect-segment'), city: getValue('prospect-city'), state: getValue('prospect-state'), region: getValue('prospect-region') };
   const query = [state.prospectFilters.segment, state.prospectFilters.city, state.prospectFilters.state, state.prospectFilters.region].filter(Boolean).join(', ');
@@ -458,16 +459,26 @@ async function searchPlaces() {
     let payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'A busca ao vivo está indisponível. Tente novamente.');
     if (payload.status === 'processing' && payload.jobId) {
+      // Status responses do not repeat the ID returned when the job was created.
+      const jobId = payload.jobId;
       const deadline = Date.now() + 280000;
       const query = new URLSearchParams(state.prospectFilters);
       while (Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 2500));
         try {
-          response = await fetch(`/api/places-search/${encodeURIComponent(payload.jobId)}?${query}`, { headers: authHeaders(), signal: AbortSignal.timeout(30000) });
-          payload = await response.json();
-          if (!response.ok) throw new Error(payload.error || 'Não foi possível acompanhar a busca.');
+          response = await fetch(`/api/places-search/${encodeURIComponent(jobId)}?${query}`, { headers: authHeaders(), signal: AbortSignal.timeout(30000) });
+          const progress = await response.json().catch(() => ({}));
+          if (!response.ok) {
+            const error = new Error(progress.error || 'Não foi possível acompanhar a busca.');
+            error.status = response.status;
+            throw error;
+          }
+          payload = progress;
         } catch (pollError) {
-          if (pollError.name !== 'TimeoutError' && pollError.name !== 'AbortError') throw pollError;
+          const temporary = ['TimeoutError', 'AbortError'].includes(pollError.name)
+            || [429, 502, 503, 504].includes(pollError.status)
+            || (pollError.name === 'TypeError' && /fetch|network/i.test(pollError.message));
+          if (!temporary) throw pollError;
           state.prospectMessage = 'A fonte está demorando para responder. Vou continuar acompanhando esta busca…';
           render();
           continue;
@@ -489,8 +500,8 @@ async function searchPlaces() {
     state.prospectRemote = false;
     state.prospectProvider = '';
     state.prospectResults = null;
-    state.prospectMessage = error.message.includes('Failed to fetch') || error.name === 'TimeoutError'
-      ? 'A busca ao vivo demorou mais que o esperado. Nenhum resultado antigo foi carregado; tente novamente em instantes.'
+    state.prospectMessage = /failed to fetch|timeout|timed out|aborted/i.test(error.message) || error.name === 'TimeoutError'
+      ? 'O serviço de busca demorou para responder. Tente novamente em instantes.'
       : error.message;
     toast('Não foi possível consultar a base ao vivo');
   } finally {

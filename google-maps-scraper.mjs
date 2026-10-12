@@ -46,10 +46,15 @@ async function responseJson(response) {
   const text = await response.text();
   let payload;
   try { payload = text ? JSON.parse(text) : {}; }
-  catch { throw new Error('O serviço Google Maps Scraper retornou uma resposta inválida.'); }
+  catch {
+    if (response.ok) throw new Error('O serviço Google Maps Scraper retornou uma resposta inválida.');
+    payload = {};
+  }
   if (!response.ok) {
     const message = payload.message || payload.Message || payload.error || `O scraper respondeu com status ${response.status}.`;
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return payload;
 }

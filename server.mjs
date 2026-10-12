@@ -95,7 +95,7 @@ async function searchPlaces(request, response) {
     if (!auth?.profile?.active) return sendJson(response, 401, { error: 'Entre no sistema para pesquisar leads.' });
   } catch (error) { return sendJson(response, 503, { error: error.message || 'Não foi possível validar seu acesso.' }); }
   const query = await readRequest(request);
-  const scraperUrl = process.env.GOOGLE_MAPS_SCRAPER_URL;
+  const scraperUrl = process.env.GOOGLE_MAPS_SCRAPER_URL?.trim();
   if (scraperUrl) {
     try {
       const { jobId } = await startGoogleMapsScraperJob(query, { baseUrl: scraperUrl });
@@ -123,10 +123,10 @@ async function getPlacesSearch(request, response, jobId) {
     // A scraper instance on a free host can stall briefly while waking or
     // returning a job status. Keep the client polling the same ephemeral job
     // instead of turning one slow status request into a failed search.
-    if (error.name === 'TimeoutError' || error.name === 'AbortError' || /aborted due to timeout|timed out|timeout/i.test(error.message)) {
+    if (error.name === 'TimeoutError' || error.name === 'AbortError' || [429, 502, 503, 504].includes(error.status) || /aborted due to timeout|timed out|timeout/i.test(error.message)) {
       return sendJson(response, 200, { status: 'processing', provider: 'google-maps-scraper', notice: 'O serviço está demorando para responder; continuando a consulta.' });
     }
-    if (/status 404/i.test(error.message)) return sendJson(response, 410, { error: 'O Google Maps Scraper não encontrou essa busca temporária. Inicie uma nova consulta.' });
+    if (error.status === 404) return sendJson(response, 410, { error: 'O Google Maps Scraper não encontrou essa busca temporária. Inicie uma nova consulta.' });
     return sendJson(response, 502, { error: error.message || 'Não foi possível consultar o andamento no scraper.' });
   }
 }
