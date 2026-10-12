@@ -442,7 +442,7 @@ async function searchPlaces() {
   const query = [state.prospectFilters.segment, state.prospectFilters.city, state.prospectFilters.state, state.prospectFilters.region].filter(Boolean).join(', ');
   if (!query) { toast('Informe pelo menos o segmento ou a cidade'); return; }
   state.prospectLoading = true;
-  state.prospectMessage = 'Consultando a fonte ao vivo. Com o Google Maps Scraper, a busca pode levar alguns minutos.';
+  state.prospectMessage = 'Conectando à fonte ao vivo. Se o scraper estava hibernando, ele pode levar até um minuto para acordar.';
   state.prospectResults = null;
   state.prospectProvider = '';
   render();
@@ -453,7 +453,7 @@ async function searchPlaces() {
       headers: authHeaders(),
       body: JSON.stringify(state.prospectFilters),
       // The scraper's Render instance may need up to 60 seconds to wake.
-      signal: AbortSignal.timeout(75000),
+      signal: AbortSignal.timeout(150000),
     });
     let payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'A busca ao vivo está indisponível. Tente novamente.');
@@ -462,12 +462,19 @@ async function searchPlaces() {
       const query = new URLSearchParams(state.prospectFilters);
       while (Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 2500));
-        response = await fetch(`/api/places-search/${encodeURIComponent(payload.jobId)}?${query}`, { headers: authHeaders(), signal: AbortSignal.timeout(20000) });
-        payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || 'Não foi possível acompanhar a busca.');
+        try {
+          response = await fetch(`/api/places-search/${encodeURIComponent(payload.jobId)}?${query}`, { headers: authHeaders(), signal: AbortSignal.timeout(30000) });
+          payload = await response.json();
+          if (!response.ok) throw new Error(payload.error || 'Não foi possível acompanhar a busca.');
+        } catch (pollError) {
+          if (pollError.name !== 'TimeoutError' && pollError.name !== 'AbortError') throw pollError;
+          state.prospectMessage = 'A fonte está demorando para responder. Vou continuar acompanhando esta busca…';
+          render();
+          continue;
+        }
         if (payload.status === 'failed') throw new Error(payload.error || 'A fonte de busca não conseguiu concluir a consulta.');
         if (payload.status === 'completed') break;
-        state.prospectMessage = 'O scraper está pesquisando no Google Maps. Isso pode levar alguns minutos…';
+        state.prospectMessage = payload.notice || 'O scraper está pesquisando no Google Maps. Isso pode levar alguns minutos…';
         render();
       }
       if (payload.status !== 'completed') throw new Error('A busca ainda está sendo processada. Tente novamente em instantes.');

@@ -61,7 +61,7 @@ async function searchOpenStreetMap(query) {
   const stateFilter = stateName ? `area["name"~"^${stateName}$",i]["boundary"="administrative"]->.stateArea;` : '';
   const stateScope = stateName ? '(area.stateArea)' : '';
   const selectors = buildNicheSelectors(query.segment);
-  const overpassQuery = `[out:json][timeout:20];${stateFilter}area["name"~"^${areaName}$",i]["boundary"="administrative"]${stateScope}->.searchArea;(${selectors});out center tags;`;
+  const overpassQuery = `[out:json][timeout:30];${stateFilter}area["name"~"^${areaName}$",i]["boundary"="administrative"]${stateScope}->.searchArea;(${selectors});out center tags;`;
   const endpoints = ['https://overpass-api.de/api/interpreter', 'https://lz4.overpass-api.de/api/interpreter', 'https://overpass.private.coffee/api/interpreter', 'https://maps.mail.ru/osm/tools/overpass/api/interpreter'];
   let lastError = 'Fonte OpenStreetMap temporariamente indisponível.';
   for (const endpoint of endpoints) {
@@ -70,7 +70,9 @@ async function searchOpenStreetMap(query) {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'VerdiTechSolucoes/1.0 (local business prospecting tool)' },
         body: new URLSearchParams({ data: overpassQuery }),
-        signal: AbortSignal.timeout(4500),
+        // Public Overpass mirrors frequently answer in 5–15s; short client
+        // deadlines were causing false failures before their own query limit.
+        signal: AbortSignal.timeout(15000),
       });
       const raw = await overpassResponse.text();
       if (overpassResponse.status === 429 || overpassResponse.status === 406) { lastError = 'A fonte pública pediu uma pausa de 30 segundos antes de uma nova tentativa.'; break; }
@@ -118,6 +120,12 @@ async function getPlacesSearch(request, response, jobId) {
     if (job.status === 'failed') return sendJson(response, 200, { ...job, results: [] });
     return sendJson(response, 200, job);
   } catch (error) {
+    // A scraper instance on a free host can stall briefly while waking or
+    // returning a job status. Keep the client polling the same ephemeral job
+    // instead of turning one slow status request into a failed search.
+    if (error.name === 'TimeoutError' || error.name === 'AbortError' || /aborted due to timeout|timed out|timeout/i.test(error.message)) {
+      return sendJson(response, 200, { status: 'processing', provider: 'google-maps-scraper', notice: 'O serviço está demorando para responder; continuando a consulta.' });
+    }
     if (/status 404/i.test(error.message)) return sendJson(response, 410, { error: 'O Google Maps Scraper não encontrou essa busca temporária. Inicie uma nova consulta.' });
     return sendJson(response, 502, { error: error.message || 'Não foi possível consultar o andamento no scraper.' });
   }

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { buildMapsKeyword, getGoogleMapsScraperJob, mapGoogleMapsPlace, searchGoogleMapsScraper } from '../google-maps-scraper.mjs';
+import { buildMapsKeyword, getGoogleMapsScraperJob, mapGoogleMapsPlace, searchGoogleMapsScraper, startGoogleMapsScraperJob } from '../google-maps-scraper.mjs';
 
 test('monta consulta Maps com nicho, cidade, estado e região', () => {
   assert.equal(buildMapsKeyword({ segment: 'Loja de roupas', city: 'Pouso Redondo', state: 'sc', region: 'Alto Vale' }), 'Loja de roupas em Pouso Redondo, SC - Alto Vale');
@@ -18,6 +18,26 @@ test('transforma o endereço JSON do Google Maps em endereço legível', () => {
   assert.equal(place.address, 'Rua das Flores, 10, Centro, Pouso Redondo, Santa Catarina, 89172-000');
 });
 
+test('aguarda o Render acordar antes de enviar a consulta ao scraper', async () => {
+  const calls = [];
+  let wakeChecks = 0;
+  const fetchImpl = async url => {
+    calls.push(url);
+    if (url === 'https://scraper.example') {
+      wakeChecks += 1;
+      const waking = wakeChecks < 3;
+      return { ok: true, status: 200, text: async () => waking ? 'APPLICATION LOADING · SERVICE WAKING UP' : '<h1>Google Maps Scraper</h1>' };
+    }
+    return { ok: true, status: 201, text: async () => JSON.stringify({ id: 'ready-job' }) };
+  };
+  const job = await startGoogleMapsScraperJob({ segment: 'Mercado', city: 'Camboriú', state: 'SC' }, {
+    baseUrl: 'https://scraper.example', fetchImpl, sleep: async () => {},
+  });
+  assert.equal(wakeChecks, 3);
+  assert.equal(calls.at(-1), 'https://scraper.example/api/v1/jobs');
+  assert.equal(job.jobId, 'ready-job');
+});
+
 test('submete e acompanha um job do scraper e converte o CSV em leads', async () => {
   const calls = [];
   const payloads = [
@@ -27,6 +47,7 @@ test('submete e acompanha um job do scraper e converte o CSV em leads', async ()
   ];
   const fetchImpl = async (url, options = {}) => {
     calls.push({ url, options });
+    if (url === 'http://127.0.0.1:8080') return { ok: true, status: 200, text: async () => '<h1>Google Maps Scraper</h1>' };
     if (url.endsWith('/download')) {
       return { ok: true, status: 200, text: async () => 'title,category,complete_address,phone,website,review_rating,review_count,link\n"Mecânica Central","Auto repair shop","Centro, Pouso Redondo","4733330000","https://oficina.example",4.7,12,"https://maps.google.com/place/central"\n' };
     }
@@ -36,10 +57,11 @@ test('submete e acompanha um job do scraper e converte o CSV em leads', async ()
   const result = await searchGoogleMapsScraper({ segment: 'Mecânico', city: 'Pouso Redondo', state: 'SC' }, {
     baseUrl: 'http://127.0.0.1:8080/', fetchImpl, sleep: async () => {}, pollIntervalMs: 0,
   });
-  assert.equal(calls[0].url, 'http://127.0.0.1:8080/api/v1/jobs');
-  assert.equal(JSON.parse(calls[0].options.body).keywords[0], 'Mecânico em Pouso Redondo, SC');
-  assert.equal(calls[1].url, 'http://127.0.0.1:8080/api/v1/jobs/job-123');
-  assert.equal(calls[3].url, 'http://127.0.0.1:8080/api/v1/jobs/job-123/download');
+  assert.equal(calls[0].url, 'http://127.0.0.1:8080');
+  assert.equal(calls[1].url, 'http://127.0.0.1:8080/api/v1/jobs');
+  assert.equal(JSON.parse(calls[1].options.body).keywords[0], 'Mecânico em Pouso Redondo, SC');
+  assert.equal(calls[2].url, 'http://127.0.0.1:8080/api/v1/jobs/job-123');
+  assert.equal(calls[4].url, 'http://127.0.0.1:8080/api/v1/jobs/job-123/download');
   assert.equal(result.provider, 'google-maps-scraper');
   assert.equal(result.results[0].name, 'Mecânica Central');
   assert.equal(result.results[0].reviews, '12');

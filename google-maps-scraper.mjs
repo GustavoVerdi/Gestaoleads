@@ -83,12 +83,33 @@ function parseCsv(source) {
 export async function startGoogleMapsScraperJob(filters, {
   baseUrl,
   fetchImpl = fetch,
+  sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+  wakeTimeoutMs = 90000,
 } = {}) {
   if (!baseUrl) throw new Error('Google Maps Scraper não configurado. Inicie o serviço local e defina GOOGLE_MAPS_SCRAPER_URL.');
   const keyword = buildMapsKeyword(filters);
   if (!keyword) throw new Error('Informe um segmento ou uma localização para pesquisar.');
   const root = baseUrl.replace(/\/+$/, '');
   const headers = { 'Content-Type': 'application/json' };
+
+  // Render Free services sleep after inactivity. Wake the scraper with a safe
+  // GET first, and wait for its real UI instead of posting a job into Render's
+  // temporary "Application loading" page (which often ends as a 504).
+  const wakeDeadline = Date.now() + wakeTimeoutMs;
+  let scraperReady = false;
+  let lastWakeError = '';
+  while (Date.now() < wakeDeadline) {
+    try {
+      const wakeResponse = await fetchImpl(root, { signal: AbortSignal.timeout(8000) });
+      const landingPage = await wakeResponse.text();
+      const waking = /application loading|service waking up|starting the instance|preparing instance/i.test(landingPage);
+      if (wakeResponse.ok && !waking) { scraperReady = true; break; }
+      lastWakeError = `status ${wakeResponse.status}`;
+    } catch (error) { lastWakeError = error.message || 'tempo esgotado'; }
+    await sleep(4000);
+  }
+  if (!scraperReady) throw new Error(`O scraper ainda está iniciando após até 90 segundos (${lastWakeError}). Tente novamente em instantes.`);
+
   const submitted = await responseJson(await fetchImpl(`${root}/api/v1/jobs`, {
     method: 'POST', headers,
     body: JSON.stringify({
@@ -105,8 +126,7 @@ export async function startGoogleMapsScraperJob(filters, {
       extra_reviews: false,
       fast_mode: false,
     }),
-    // The scraper may be waking from Render's free-tier sleep; allow startup time.
-    signal: AbortSignal.timeout(60000),
+    signal: AbortSignal.timeout(45000),
   }));
   const jobId = submitted.job_id || submitted.id || submitted.ID;
   if (!jobId) throw new Error('O scraper aceitou a busca, mas não retornou o identificador do trabalho.');
