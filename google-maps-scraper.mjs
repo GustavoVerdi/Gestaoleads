@@ -127,7 +127,10 @@ export async function startGoogleMapsScraperJob(filters, {
       keywords: [keyword],
       lang: 'pt',
       depth: 1,
-      max_time: 250,
+      // Fast mode is the default on Render Free. A shorter job window keeps
+      // the interactive search responsive while full mode retains the longer
+      // collection window for stronger coverage on larger instances.
+      max_time: fastMode ? 90 : 250,
       zoom: 15,
       lat: fastMode ? String(location.lat) : '0',
       lon: fastMode ? String(location.lon) : '0',
