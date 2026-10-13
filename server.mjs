@@ -147,7 +147,9 @@ async function authorizeTeam(request) {
 }
 async function teamUsers(request, response) {
   try {
-    const { config } = await authorizeTeam(request);
+    const access = await authorizeTeam(request);
+    if (!access) return sendJson(response, 403, { error: 'Seu cargo não tem permissão para visualizar os funcionários.' });
+    const { config } = access;
     const [usersResponse, profilesResponse] = await Promise.all([
       fetch(`${config.url}/auth/v1/admin/users?per_page=1000`, { headers: adminHeaders(), signal: AbortSignal.timeout(8000) }),
       fetch(`${config.url}/rest/v1/profiles?select=id,full_name,phone,role_id,active,must_change_password`, { headers: { ...adminHeaders(), Accept: 'application/json' }, signal: AbortSignal.timeout(8000) }),
@@ -161,7 +163,9 @@ async function teamUsers(request, response) {
 }
 async function createTeamUser(request, response) {
   try {
-    const { config } = await authorizeTeam(request);
+    const access = await authorizeTeam(request);
+    if (!access) return sendJson(response, 403, { error: 'Seu cargo não tem permissão para cadastrar funcionários.' });
+    const { config } = access;
     const body = await readRequest(request);
     const name = String(body.name || '').trim();
     const email = String(body.email || '').trim().toLowerCase();
@@ -178,7 +182,9 @@ async function createTeamUser(request, response) {
 }
 async function updateTeamUser(request, response, userId) {
   try {
-    const { config } = await authorizeTeam(request);
+    const access = await authorizeTeam(request);
+    if (!access) return sendJson(response, 403, { error: 'Seu cargo não tem permissão para atualizar funcionários.' });
+    const { config } = access;
     const body = await readRequest(request);
     const roleId = String(body.roleId || '').trim();
     if (!['sales', 'manager'].includes(roleId)) return sendJson(response, 400, { error: 'Cargo inválido.' });
