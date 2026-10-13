@@ -31,3 +31,11 @@ test('Gerente edita projetos e Vendedor trabalha leads, sem acesso confidencial 
     assert.ok(!role.permissions.includes('team'));
   }
 });
+
+test('navegar para Projetos limpa o painel de projeto anterior', () => {
+  const navigate = source.slice(source.indexOf('function navigate(view)'), source.indexOf('function openModal'));
+  assert.match(navigate, /if \(view === 'projects'\)/);
+  assert.match(navigate, /state\.activeProjectId = null/);
+  assert.match(navigate, /state\.projectFormOpen = false/);
+  assert.match(navigate, /state\.editingProjectId = null/);
+});
