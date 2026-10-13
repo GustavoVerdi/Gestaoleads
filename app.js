@@ -408,8 +408,9 @@ async function searchPlaces() {
       method: 'POST',
       headers: authHeaders(),
       body: JSON.stringify(state.prospectFilters),
-      // The scraper's Render instance may need up to 60 seconds to wake.
-      signal: AbortSignal.timeout(150000),
+      // The scraper can take up to 180 seconds to wake on Render Free,
+      // plus a small network margin before the job response arrives.
+      signal: AbortSignal.timeout(240000),
     });
     let payload = await response.json();
     if (!response.ok) throw new Error(payload.error || 'A busca ao vivo está indisponível. Tente novamente.');
