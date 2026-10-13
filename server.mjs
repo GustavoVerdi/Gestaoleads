@@ -24,6 +24,8 @@ const mimeTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript
 
 function sendJson(response, status, payload) { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(payload)); }
 function supabaseConfig() { return { url: String(process.env.SUPABASE_URL || '').replace(/\/$/, ''), publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '' }; }
+function supabaseAdminConfig() { return { ...supabaseConfig(), serviceRoleKey: process.env.SUPABASE_SERVICE_ROLE_KEY || '' }; }
+function adminHeaders() { const { publishableKey, serviceRoleKey } = supabaseAdminConfig(); return { apikey: serviceRoleKey || publishableKey, Authorization: `Bearer ${serviceRoleKey || publishableKey}`, 'Content-Type': 'application/json' }; }
 async function authenticatedProfile(request) {
   const { url, publishableKey } = supabaseConfig();
   const token = request.headers.authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
@@ -136,5 +138,55 @@ async function getPlacesSearch(request, response, jobId) {
   }
 }
 
-const server = createServer(async (request, response) => { try { const requestUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`); if (requestUrl.pathname === '/api/auth/config' && request.method === 'GET') { const { url, publishableKey } = supabaseConfig(); return sendJson(response, 200, { configured: Boolean(url && publishableKey), url, publishableKey }); } if (requestUrl.pathname === '/api/auth/session' && request.method === 'GET') { try { const auth = await authenticatedProfile(request); if (!auth?.profile?.active) return sendJson(response, 401, { error: 'Acesso não autorizado.' }); return sendJson(response, 200, auth); } catch (error) { return sendJson(response, 503, { error: error.message || 'Falha ao validar a sessão.' }); } } if (requestUrl.pathname === '/api/places-search' && request.method === 'POST') return await searchPlaces(request, response); const searchMatch = requestUrl.pathname.match(/^\/api\/places-search\/([\w-]+)$/); if (searchMatch && request.method === 'GET') return await getPlacesSearch(request, response, searchMatch[1]); if (requestUrl.pathname === '/api/health') return sendJson(response, 200, { ok: true, placesProvider: process.env.GOOGLE_MAPS_SCRAPER_URL ? 'Google Maps Scraper' : 'OpenStreetMap ao vivo', mapsScraperConfigured: Boolean(process.env.GOOGLE_MAPS_SCRAPER_URL), authConfigured: Boolean(supabaseConfig().url && supabaseConfig().publishableKey) }); const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname; const safePath = normalize(join(root, pathname)); if (!safePath.startsWith(root)) return sendJson(response, 403, { error: 'Forbidden' }); const contents = await readFile(safePath); response.writeHead(200, { 'Content-Type': mimeTypes[extname(safePath)] || 'application/octet-stream' }); response.end(contents); } catch (error) { if (error.code === 'ENOENT') return sendJson(response, 404, { error: 'Not found' }); sendJson(response, 500, { error: 'Internal server error' }); } });
+async function authorizeTeam(request) {
+  const auth = await authenticatedProfile(request);
+  if (!auth?.profile?.active || !auth.profile.permissions?.includes('team')) return null;
+  const config = supabaseAdminConfig();
+  if (!config.url || !config.serviceRoleKey) throw new Error('Configure SUPABASE_SERVICE_ROLE_KEY no ambiente do site para cadastrar funcionários.');
+  return { auth, config };
+}
+async function teamUsers(request, response) {
+  try {
+    const { config } = await authorizeTeam(request);
+    const [usersResponse, profilesResponse] = await Promise.all([
+      fetch(`${config.url}/auth/v1/admin/users?per_page=1000`, { headers: adminHeaders(), signal: AbortSignal.timeout(8000) }),
+      fetch(`${config.url}/rest/v1/profiles?select=id,full_name,phone,role_id,active,must_change_password`, { headers: { ...adminHeaders(), Accept: 'application/json' }, signal: AbortSignal.timeout(8000) }),
+    ]);
+    if (!usersResponse.ok || !profilesResponse.ok) throw new Error('Não foi possível carregar os funcionários.');
+    const users = await usersResponse.json();
+    const profiles = await profilesResponse.json();
+    const profileMap = new Map(profiles.map(profile => [profile.id, profile]));
+    return sendJson(response, 200, { users: (users.users || []).map(user => ({ id: user.id, email: user.email || '', ...profileMap.get(user.id), name: profileMap.get(user.id)?.full_name || user.user_metadata?.full_name || user.email || 'Usuário' })) });
+  } catch (error) { return sendJson(response, error.message?.startsWith('Configure') ? 503 : 403, { error: error.message || 'Acesso negado.' }); }
+}
+async function createTeamUser(request, response) {
+  try {
+    const { config } = await authorizeTeam(request);
+    const body = await readRequest(request);
+    const name = String(body.name || '').trim();
+    const email = String(body.email || '').trim().toLowerCase();
+    const phone = String(body.phone || '').trim();
+    const roleId = String(body.roleId || '').trim();
+    if (!name || !email || !/^\S+@\S+\.\S+$/.test(email) || !phone || !['sales', 'manager'].includes(roleId)) return sendJson(response, 400, { error: 'Informe nome, e-mail, telefone e um cargo válido.' });
+    const createResponse = await fetch(`${config.url}/auth/v1/admin/users`, { method: 'POST', headers: adminHeaders(), body: JSON.stringify({ email, password: 'mudar123', email_confirm: true, user_metadata: { full_name: name, phone } }), signal: AbortSignal.timeout(8000) });
+    const created = await createResponse.json().catch(() => ({}));
+    if (!createResponse.ok) return sendJson(response, createResponse.status, { error: created.msg || created.message || 'Não foi possível criar o usuário.' });
+    const profileResponse = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(created.id)}`, { method: 'PATCH', headers: { ...adminHeaders(), Prefer: 'return=minimal' }, body: JSON.stringify({ full_name: name, phone, role_id: roleId, active: true, must_change_password: true }), signal: AbortSignal.timeout(8000) });
+    if (!profileResponse.ok) { await fetch(`${config.url}/auth/v1/admin/users/${created.id}`, { method: 'DELETE', headers: adminHeaders() }); throw new Error('Usuário criado, mas o perfil não pôde ser configurado.'); }
+    return sendJson(response, 201, { user: { id: created.id, email, name, full_name: name, phone, role_id: roleId, active: true, must_change_password: true } });
+  } catch (error) { return sendJson(response, error.message?.startsWith('Configure') ? 503 : 500, { error: error.message || 'Não foi possível criar o funcionário.' }); }
+}
+async function updateTeamUser(request, response, userId) {
+  try {
+    const { config } = await authorizeTeam(request);
+    const body = await readRequest(request);
+    const roleId = String(body.roleId || '').trim();
+    if (!['sales', 'manager'].includes(roleId)) return sendJson(response, 400, { error: 'Cargo inválido.' });
+    const profileResponse = await fetch(`${config.url}/rest/v1/profiles?id=eq.${encodeURIComponent(userId)}`, { method: 'PATCH', headers: { ...adminHeaders(), Prefer: 'return=minimal' }, body: JSON.stringify({ role_id: roleId }), signal: AbortSignal.timeout(8000) });
+    if (!profileResponse.ok) throw new Error('Não foi possível atualizar o cargo.');
+    return sendJson(response, 200, { ok: true });
+  } catch (error) { return sendJson(response, error.message?.startsWith('Configure') ? 503 : 500, { error: error.message || 'Não foi possível atualizar o funcionário.' }); }
+}
+
+const server = createServer(async (request, response) => { try { const requestUrl = new URL(request.url, `http://${request.headers.host || 'localhost'}`); if (requestUrl.pathname === '/api/auth/config' && request.method === 'GET') { const { url, publishableKey } = supabaseConfig(); return sendJson(response, 200, { configured: Boolean(url && publishableKey), url, publishableKey }); } if (requestUrl.pathname === '/api/auth/session' && request.method === 'GET') { try { const auth = await authenticatedProfile(request); if (!auth?.profile?.active) return sendJson(response, 401, { error: 'Acesso não autorizado.' }); return sendJson(response, 200, auth); } catch (error) { return sendJson(response, 503, { error: error.message || 'Falha ao validar a sessão.' }); } } if (requestUrl.pathname === '/api/team/users' && request.method === 'GET') return await teamUsers(request, response); if (requestUrl.pathname === '/api/team/users' && request.method === 'POST') return await createTeamUser(request, response); const teamUserMatch = requestUrl.pathname.match(/^\/api\/team\/users\/([\w-]+)$/); if (teamUserMatch && request.method === 'PATCH') return await updateTeamUser(request, response, teamUserMatch[1]); if (requestUrl.pathname === '/api/places-search' && request.method === 'POST') return await searchPlaces(request, response); const searchMatch = requestUrl.pathname.match(/^\/api\/places-search\/([\w-]+)$/); if (searchMatch && request.method === 'GET') return await getPlacesSearch(request, response, searchMatch[1]); if (requestUrl.pathname === '/api/health') return sendJson(response, 200, { ok: true, placesProvider: process.env.GOOGLE_MAPS_SCRAPER_URL ? 'Google Maps Scraper' : 'OpenStreetMap ao vivo', mapsScraperConfigured: Boolean(process.env.GOOGLE_MAPS_SCRAPER_URL), authConfigured: Boolean(supabaseConfig().url && supabaseConfig().publishableKey), teamAdminConfigured: Boolean(supabaseAdminConfig().serviceRoleKey) }); const pathname = requestUrl.pathname === '/' ? '/index.html' : requestUrl.pathname; const safePath = normalize(join(root, pathname)); if (!safePath.startsWith(root)) return sendJson(response, 403, { error: 'Forbidden' }); const contents = await readFile(safePath); response.writeHead(200, { 'Content-Type': mimeTypes[extname(safePath)] || 'application/octet-stream' }); response.end(contents); } catch (error) { if (error.code === 'ENOENT') return sendJson(response, 404, { error: 'Not found' }); sendJson(response, 500, { error: 'Internal server error' }); } });
 server.listen(port, () => console.log(`Despverdi Gestão em http://localhost:${port}`));
