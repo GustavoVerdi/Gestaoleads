@@ -1,5 +1,5 @@
 update public.app_roles
-set name = 'CEO', updated_at = now()
+set name = 'CEO', permissions = array['dashboard','projects','leads','project-edit','sensitive','team'], protected = true, updated_at = now()
 where id = 'owner';
 
 insert into public.app_roles (id, name, permissions, protected)

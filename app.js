@@ -492,7 +492,8 @@ window.verdiAuthReady.then(async authorized => {
   if (!authorized) return;
   const { user, profile } = window.verdiAuth;
   const role = profile.role || { id: profile.role_id, name: { owner: 'CEO', manager: 'Gerente', sales: 'Vendedor' }[profile.role_id] || 'Cargo personalizado', permissions: profile.permissions };
-  const activeRole = { ...role, name: ['owner', 'role-owner'].includes(role.id) ? 'CEO' : role.name, permissions: profile.permissions };
+  const isCeo = ['owner', 'role-owner'].includes(role.id) || role.name === 'CEO';
+  const activeRole = { ...role, name: isCeo ? 'CEO' : role.name, permissions: isCeo ? rolePermissions.map(permission => permission.id) : profile.permissions };
   const catalog = defaultRoles.map(item => ({ ...item, id: { 'role-owner': 'owner', 'role-sales': 'sales', 'role-manager': 'manager' }[item.id] || item.id }));
   state.roles = catalog.map(item => item.id === activeRole.id ? activeRole : item);
   if (!state.roles.some(item => item.id === activeRole.id)) state.roles.push(activeRole);
