@@ -30,7 +30,7 @@
     <div class="app-shell">
       <aside class="sidebar" aria-label="Navegação principal">
         <div class="brand-lockup">
-          <div class="brand-mark">d<span>/</span></div>
+          <div class="brand-mark">v<span>/</span></div>
           <div>
             <span class="brand-name">verdi tech</span>
             <span class="brand-caption">soluções digitais</span>
@@ -62,9 +62,10 @@
           <div class="breadcrumbs"><span>Verdi Tech Soluções</span><span class="crumb-separator">/</span><strong id="breadcrumb-current">Dashboard</strong></div>
           <div class="topbar-actions">
             <label class="global-search"><span>⌕</span><input id="global-search" type="search" placeholder="Buscar projetos..." /><kbd>⌘ K</kbd></label>
-            <button class="icon-button top-icon" aria-label="Ajuda">?</button>
-            <button class="icon-button top-icon notification-button" aria-label="Notificações"><span>♧</span><i></i></button>
+            <button class="icon-button top-icon" data-top-action="help" aria-label="Ajuda" aria-expanded="false">?</button>
+            <button class="icon-button top-icon notification-button" data-top-action="notifications" aria-label="Notificações" aria-expanded="false"><span>♧</span><i></i></button>
             <div class="top-avatar" id="top-user-avatar">GV</div>
+            <div id="top-popover-root" class="top-popover-root" aria-live="polite"></div>
           </div>
         </header>
 

@@ -472,6 +472,18 @@ function toast(message) { if (message === 'Novo projeto: em breve você poderá 
 
 $$('.nav-item').forEach(item => item.addEventListener('click', () => navigate(item.dataset.view)));
 $$('[data-close-modal]').forEach(el => el.addEventListener('click', closeModal));
+$$('[data-top-action]').forEach(button => button.addEventListener('click', () => {
+  const root = $('#top-popover-root');
+  const open = root.dataset.open === button.dataset.topAction;
+  $$('[data-top-action]').forEach(item => item.setAttribute('aria-expanded', 'false'));
+  if (open) { root.innerHTML = ''; root.dataset.open = ''; return; }
+  root.dataset.open = button.dataset.topAction;
+  button.setAttribute('aria-expanded', 'true');
+  root.innerHTML = button.dataset.topAction === 'notifications'
+    ? '<section class="top-popover"><h3>Notificações</h3><p>Você está em dia.</p><div class="top-popover-list"><div class="top-popover-item"><strong>Sistema online</strong>O painel está conectado ao ambiente de produção.</div><div class="top-popover-item"><strong>Leads</strong>Novos cadastros aparecem na aba Leads.</div></div></section>'
+    : '<section class="top-popover"><h3>Ajuda rápida</h3><p>Atalhos para usar o painel com mais agilidade.</p><div class="top-popover-list"><div class="top-popover-item"><strong>Buscar projetos</strong>Use a busca no topo ou pressione Ctrl/⌘ K.</div><div class="top-popover-item"><strong>Novo projeto</strong>Pressione N quando seu cargo tiver permissão de edição.</div><div class="top-popover-item"><strong>Equipe e cargos</strong>Cadastre funcionários pelo menu Equipe.</div></div></section>';
+}));
+document.addEventListener('click', event => { if (!event.target.closest('[data-top-action], #top-popover-root')) { const root = $('#top-popover-root'); if (root) { root.innerHTML = ''; root.dataset.open = ''; $$('[data-top-action]').forEach(item => item.setAttribute('aria-expanded', 'false')); } } });
 $('#lead-form').addEventListener('submit', event => { event.preventDefault(); if (!hasPermission('leads')) return toast('Seu cargo não tem permissão para cadastrar leads.'); const data = Object.fromEntries(new FormData(event.target)); const lead = { id: crypto.randomUUID(), ...leadAuthor(), company: String(data.company || '').trim(), whatsapp: String(data.whatsapp || '').trim(), segment: String(data.segment || '').trim(), city: String(data.city || '').trim(), stage: 'Novo', createdAt: new Date().toISOString() }; if (!lead.company || !lead.whatsapp || !lead.segment) return toast('Preencha loja, WhatsApp e nicho.'); state.leads.unshift(lead); try { saveLeads(); closeModal(); event.target.reset(); state.activeLeadId = lead.id; state.leadFormOpen = false; toast(`${lead.company} adicionada aos leads`); navigate('leads'); } catch { state.leads = state.leads.filter(item => item.id !== lead.id); toast('Não foi possível salvar o lead neste navegador.'); } });
 $('#global-search').addEventListener('keydown', event => { if (event.key === 'Enter' && event.target.value.trim()) { state.projectSearch = event.target.value.trim(); navigate('projects'); } });
 document.addEventListener('keydown', event => { if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') { event.preventDefault(); $('#global-search').focus(); } if (event.key.toLowerCase() === 'n' && !['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName) && hasPermission('project-edit')) { event.preventDefault(); state.projectFormOpen = true; state.editingProjectId = null; navigate('projects'); } if (event.key === 'Escape') { closeModal(); closeDrawer(); } });
