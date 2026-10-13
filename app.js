@@ -398,7 +398,7 @@ async function searchPlaces() {
   const query = [state.prospectFilters.segment, state.prospectFilters.city, state.prospectFilters.state, state.prospectFilters.region].filter(Boolean).join(', ');
   if (!query) { toast('Informe pelo menos o segmento ou a cidade'); return; }
   state.prospectLoading = true;
-  state.prospectMessage = 'Conectando à fonte ao vivo. Se o scraper estava hibernando, ele pode levar até um minuto para acordar.';
+  state.prospectMessage = 'Conectando à fonte ao vivo. Se o scraper estava hibernando, ele pode levar até três minutos para acordar.';
   state.prospectResults = null;
   state.prospectProvider = '';
   render();

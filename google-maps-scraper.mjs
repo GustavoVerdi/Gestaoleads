@@ -89,7 +89,7 @@ export async function startGoogleMapsScraperJob(filters, {
   baseUrl,
   fetchImpl = fetch,
   sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
-  wakeTimeoutMs = 90000,
+  wakeTimeoutMs = 180000,
   fastMode = false,
   location,
 } = {}) {
@@ -118,7 +118,7 @@ export async function startGoogleMapsScraperJob(filters, {
     } catch (error) { lastWakeError = error.message || 'tempo esgotado'; }
     await sleep(4000);
   }
-  if (!scraperReady) throw new Error(`O scraper ainda está iniciando após até 90 segundos (${lastWakeError}). Tente novamente em instantes.`);
+  if (!scraperReady) throw new Error(`O scraper ainda está iniciando após até 180 segundos (${lastWakeError}). Tente novamente em instantes.`);
 
   const submitted = await responseJson(await fetchImpl(`${root}/api/v1/jobs`, {
     method: 'POST', headers,
