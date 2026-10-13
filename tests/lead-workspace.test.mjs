@@ -4,6 +4,43 @@ import vm from 'node:vm';
 import { readFile } from 'node:fs/promises';
 const messages = await readFile(new URL('../lead-messages.js', import.meta.url), 'utf8');
 const workspace = await readFile(new URL('../lead-workspace.js', import.meta.url), 'utf8');
+const app = await readFile(new URL('../app.js', import.meta.url), 'utf8');
+test('renderização ativa os controles da aba leads', () => {
+  const renderSource = app.slice(app.indexOf('function render()'), app.indexOf('function decorateProspectActions()'));
+  assert.match(renderSource, /bindLeadWorkspace\(\)/);
+});
+
+test('trocar tipo atualiza o texto e preserva rascunhos por tipo e canal', () => {
+  const c = setup();
+  const controls = new Map();
+  const control = id => {
+    if (!controls.has(id)) controls.set(id, { listeners: {}, addEventListener(event, fn) { this.listeners[event] = fn; }, focus() {} });
+    return controls.get(id);
+  };
+  c.$ = control;
+  c.$$ = () => [];
+  c.state.view = 'leads';
+  c.state.activeLeadId = '1';
+  c.state.leads = [{ id: '1', company: 'Auto Teste', segment: 'Loja de carros' }];
+  let html = '';
+  c.render = () => { html = c.leadWorkspaceDetail(c.state.leads[0]); c.bindLeadWorkspace(); };
+  c.render();
+  const change = (id, value, event = 'change') => control(id).listeners[event]({ target: { value } });
+  change('#outreach-message', 'Minha abordagem personalizada', 'input');
+  change('#outreach-template', 'solution');
+  assert.match(html, /catálogo do estoque/);
+  assert.ok(!html.includes('Minha abordagem personalizada'));
+  change('#outreach-message', 'Oferta personalizada', 'input');
+  change('#outreach-template', 'connect');
+  assert.ok(html.includes('Minha abordagem personalizada'));
+  change('#outreach-channel', 'call');
+  assert.match(html, /bom momento/);
+  assert.ok(!html.includes('Minha abordagem personalizada'));
+  change('#outreach-channel', 'whatsapp');
+  assert.ok(html.includes('Minha abordagem personalizada'));
+  change('#outreach-template', 'solution');
+  assert.ok(html.includes('Oferta personalizada'));
+});
 function setup() {
   const context=vm.createContext({window:{verdiAuth:{user:{id:'sales-1',email:'vendedor@example.com'},profile:{full_name:'Vendedor teste'}}}, state:{leads:[],search:'',activeLeadId:null},escapeHtml:value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])),hasPermission:()=>true,saveLeads:()=>{},toast:()=>{}});
   vm.runInContext(messages+'\n'+workspace,context);return context;

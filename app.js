@@ -252,7 +252,7 @@ function render() {
   $('#view-root').innerHTML = (views[state.view] || (() => genericView(state.view)))();
   $('#breadcrumb-current').textContent = viewLabels[state.view] || 'Workspace';
   $$('.nav-item').forEach(item => { item.hidden = item.dataset.view === 'team' ? !hasPermission('team') : !hasPermission(item.dataset.view); item.classList.toggle('active', item.dataset.view === state.view); });
-  bindViewEvents(); bindAdminEvents(); decorateProspectActions();
+  bindViewEvents(); bindAdminEvents(); bindLeadWorkspace(); decorateProspectActions();
 }
 function decorateProspectActions() { if (state.view !== 'prospect') return; $$('.table-actions').forEach(cell => { const addButton = cell.querySelector('[data-action="add-lead"]'); if (!addButton || cell.querySelector('[data-action="view-prospect"]')) return; const detailsButton = document.createElement('button'); detailsButton.dataset.action = 'view-prospect'; detailsButton.dataset.company = addButton.dataset.company; detailsButton.textContent = 'Ver dados ↗'; cell.insertBefore(detailsButton, addButton); }); $$('[data-action="view-prospect"]').forEach(element => element.addEventListener('click', () => openProspectDrawer(element.dataset.company))); }
 
