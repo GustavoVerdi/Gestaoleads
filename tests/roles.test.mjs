@@ -39,3 +39,11 @@ test('navegar para Projetos limpa o painel de projeto anterior', () => {
   assert.match(navigate, /state\.projectFormOpen = false/);
   assert.match(navigate, /state\.editingProjectId = null/);
 });
+
+test('trocar de aba fecha o lead aberto e retorna à lista normal', () => {
+  const navigate = source.slice(source.indexOf('function navigate(view)'), source.indexOf('function openModal'));
+  assert.match(navigate, /const previousView = state\.view/);
+  assert.match(navigate, /view !== 'leads' \|\| previousView !== 'leads'/);
+  assert.match(navigate, /state\.activeLeadId = null/);
+  assert.match(navigate, /state\.leadFormOpen = false/);
+});
