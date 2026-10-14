@@ -1,9 +1,17 @@
 {
+  "version": 2,
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
+  "builds": [
+    { "src": "index.html", "use": "@vercel/static" },
+    { "src": "*.js", "use": "@vercel/static" },
+    { "src": "*.css", "use": "@vercel/static" }
+  ],
+  "routes": [
     {
-      "source": "/api/:path*",
-      "destination": "https://gestaoleads.onrender.com/api/:path*"
-    }
+      "src": "/api/(.*)",
+      "dest": "https://gestaoleads.onrender.com/api/$1"
+    },
+    { "handle": "filesystem" },
+    { "src": "/(.*)", "dest": "/index.html" }
   ]
 }
