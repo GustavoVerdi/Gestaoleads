@@ -38,3 +38,11 @@ test('falha de localização não fica presa no cache e pode ser tentada novamen
   failed = false;
   assert.ok((await resolve({ city: 'Pouso Redondo', state: 'SC' })).radius > 0);
 });
+
+test('usa geocodificação pública quando o IBGE está indisponível', async () => {
+  const resolve = createMunicipalityResolver({ fetchImpl: async url => {
+    if (url.includes('nominatim.openstreetmap.org')) return { ok: true, json: async () => [{ lat: '-27.25', lon: '-49.93' }] };
+    throw new Error('IBGE indisponível');
+  } });
+  assert.deepEqual(await resolve({ city: 'Pouso Redondo', state: 'SC' }), { lat: '-27.25', lon: '-49.93', radius: 20000 });
+});

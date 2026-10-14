@@ -42,14 +42,28 @@ export function createMunicipalityResolver({ fetchImpl = fetch, now = Date.now }
       throw new Error('Não foi possível localizar a cidade no IBGE agora. Tente novamente em instantes.');
     }
   }
+  async function fallbackLocation(city, uf, originalError) {
+    try {
+      const params = new URLSearchParams({ format: 'jsonv2', limit: '1', country: 'Brasil', city, state: uf });
+      const response = await fetchImpl(`https://nominatim.openstreetmap.org/search?${params}`, { headers: { Accept: 'application/json', 'User-Agent': 'VerdiTechGestao/1.0' }, signal: AbortSignal.timeout(12000) });
+      if (!response.ok) throw new Error(`status ${response.status}`);
+      const [place] = await response.json();
+      const lat = Number(place?.lat), lon = Number(place?.lon);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) throw new Error('coordenadas ausentes');
+      return { lat: String(lat), lon: String(lon), radius: 20000 };
+    } catch { throw originalError; }
+  }
   return async ({ city, state }) => {
     const uf = String(state || '').trim().toUpperCase();
     if (!STATES.has(uf) || !normalizeName(city)) throw new Error('Informe a cidade e a sigla do estado, por exemplo: Pouso Redondo e SC.');
-    const cities = await cached(`state:${uf}`, () => getJson(`/v1/localidades/estados/${uf}/municipios`));
+    let cities;
+    try { cities = await cached(`state:${uf}`, () => getJson(`/v1/localidades/estados/${uf}/municipios`)); }
+    catch (error) { return fallbackLocation(city, uf, error); }
     const match = cities.find(item => normalizeName(item.nome) === normalizeName(city));
     if (!match) throw new Error(`Cidade não encontrada em ${uf}. Confira o nome completo do município e o estado.`);
     if (!/^\d{7}$/.test(String(match.id))) throw new Error('O IBGE retornou um município inválido.');
-    return cached(`city:${match.id}`, async () => locationFromGeometry(await getJson(`/v3/malhas/municipios/${match.id}?formato=application/vnd.geo+json&qualidade=minima`)));
+    try { return await cached(`city:${match.id}`, async () => locationFromGeometry(await getJson(`/v3/malhas/municipios/${match.id}?formato=application/vnd.geo+json&qualidade=minima`))); }
+    catch (error) { return fallbackLocation(city, uf, error); }
   };
 }
 
