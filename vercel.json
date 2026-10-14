@@ -4,12 +4,13 @@
   "builds": [
     { "src": "index.html", "use": "@vercel/static" },
     { "src": "*.js", "use": "@vercel/static" },
-    { "src": "*.css", "use": "@vercel/static" }
+    { "src": "*.css", "use": "@vercel/static" },
+    { "src": "api/**/*.mjs", "use": "@vercel/node" }
   ],
   "routes": [
     {
       "src": "/api/(.*)",
-      "dest": "https://gestaoleads.onrender.com/api/$1"
+      "dest": "/api/[...path].mjs"
     },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }

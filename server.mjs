@@ -22,6 +22,7 @@ const root = fileURLToPath(new URL('.', import.meta.url));
 const port = Number(process.env.PORT || 4173);
 const mimeTypes = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.json': 'application/json; charset=utf-8' };
 const ceoPermissions = ['dashboard', 'projects', 'leads', 'project-edit', 'sensitive', 'team'];
+export { server };
 
 function sendJson(response, status, payload) { response.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }); response.end(JSON.stringify(payload)); }
 function supabaseConfig() { return { url: String(process.env.SUPABASE_URL || '').replace(/\/$/, ''), publishableKey: process.env.SUPABASE_PUBLISHABLE_KEY || process.env.SUPABASE_ANON_KEY || '' }; }
