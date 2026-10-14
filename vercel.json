@@ -9,6 +9,10 @@
   ],
   "routes": [
     {
+      "src": "/api/workspace",
+      "dest": "/api/workspace.mjs"
+    },
+    {
       "src": "/api/(.*)",
       "dest": "/api/[...path].mjs"
     },
